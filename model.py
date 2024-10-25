@@ -11,8 +11,8 @@ class InputEmbedding(nn.Module):
         self.embedding = nn.Embedding(vocabulary_size, d_model)
 
 
-        def forward(self, x):
-            return self.embedding(x) * math.sqrt(d_model)
+    def forward(self, x):
+        return self.embedding(x) * math.sqrt(self.d_model)
 
 
 class PositionalEncoding(nn.Module):
@@ -39,11 +39,12 @@ class PositionalEncoding(nn.Module):
         # this saves the positional encoding tensor in memory
         self.register_buffer('pos_enc', pos_enc)
 
-        def forward(self, x):
-            x = x + (self.pos_enc[:, :x.shape[1], :]).requires_grad_(False)
-            return self.dropout(x)
+    def forward(self, x):
+        x = x + (self.pos_enc[:, :x.shape[1], :]).requires_grad_(False)
+        return self.dropout(x)
 
 class LayerNormalization(nn.Module):
+
     def __init__(self, epsilon: float = 10**(-6)):
         super().__init__()
         self.epsilon = epsilon
@@ -55,11 +56,17 @@ class LayerNormalization(nn.Module):
         standard_deviation = x.std(dim = -1, keepdim = True)
 
         return self.alpha * (x-mean) / (standard_deviation + self.epsilon) + self.bias
-        
 
 
+class FeedForwardBlock(nn.Module):
+
+    def __init__(self, d_model: int, ffn_dim: int, dropout: float) -> None:
+        super().__init__()
+        self.linear_1 = nn.Linear(d_model, ffn_dim) #W1 and b1
+        self.dropout = nn.Dropout(dropout)
+        self.linear_2 = nn.Linear(ffn_dim, d_model) #W2 and b2
 
 
+    def forward(self, x):
+        return self.linear_2(self.dropout(torch.relu(self.linear_1(x))))
 
-
-        
