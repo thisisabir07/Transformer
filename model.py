@@ -88,9 +88,25 @@ class MultiHeadAttentionBlock(nn.Module):
 
     @staticmethod
     def attention(query, key, value, mask, dropout: nn.Dropout):
-        attention_scores = torch.einsum('bhsq, bhtq -> bhst', query, key)
+        
+        dim_k = query.shape[-1]
 
+        attention_scores = (torch.einsum('bhsq, bhtq -> bhst', query, key)) / torch.sqrt(torch.tensor(dim_k, dtype=torch.float32))
 
+        if mask is not None:
+            attention_scores = attention_scores.masked_fill(mask == 0, -1e9)
+        attention_scores = attention_scores.softmax(dim = -1) # dimention of attention_score is: batch_size (b), heads (h), sequence_length (s), sequence_length (s)
+
+        if dropout is not None:
+            attention_scores = dropout(attention_scores)
+
+        # Dimensions:
+        # attention_scores: batch_size (b), heads (h), sequence_length (s), sequence_length (s)
+        # value: batch_size (b), heads (h), sequence_length (s), dim_q (q)
+        # output: batch_size (b), heads (h), sequence_length (s), dim_q (q)
+
+        output = torch.einsum('bhss,bhsq->bhsq', attention_scores, value)
+        return output, attention_scores
 
 
 
@@ -105,5 +121,12 @@ class MultiHeadAttentionBlock(nn.Module):
         Q = torch.einsum('bsd, hdq -> bhsq', q, self.weight_q)
         K = torch.einsum('bsd, hdq -> bhsq', k, self.weight_k)
         V = torch.einsum('bsd, hdq -> bhsq', v, self.weight_v)
+
+        x, self.attention_scores = MultiHeadAttentionBlock.attention(Q, K, V, mask, self.dropout)
+
+
+
+
+
 
 
