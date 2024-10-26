@@ -70,3 +70,40 @@ class FeedForwardBlock(nn.Module):
     def forward(self, x):
         return self.linear_2(self.dropout(torch.relu(self.linear_1(x))))
 
+
+class MultiHeadAttentionBlock(nn.Module):
+
+    def __init__(self, d_model: int, heads: int, dropout: float):
+        super().__init__()
+        self.d_model = d_model
+        self.heads = heads
+        self. dropout = nn.Dropout(dropout)
+        assert d_model % heads == 0, "D_model should be divisible by the number of heads"
+
+        dim_q = self.d_model // self.heads
+        self.weight_q = nn.Parameter(torch.randn(size=(heads, d_model, dim_q),generator=torch.random.manual_seed(0)))
+        self.weight_k = nn.Parameter(torch.randn(size=(heads, d_model, dim_q),generator=torch.random.manual_seed(1)))
+        self.weight_v = nn.Parameter(torch.randn(size=(heads, d_model, dim_q),generator=torch.random.manual_seed(2)))
+        self.weight_out = nn.Parameter(torch.randn(size=(d_model,d_model), generator=torch.random.manual_seed(3)))
+
+    @staticmethod
+    def attention(query, key, value, mask, dropout: nn.Dropout):
+        attention_scores = torch.einsum('bhsq, bhtq -> bhst', query, key)
+
+
+
+
+
+    def forward(self, q, k ,v, mask):
+
+        # q, k, v = batch_size (b), sequence_length (s), d_model (d)
+        # weight_q, weight_k, weight_v = heads (h), dim_q (q), d_model (d)
+        # Q, K, V = batch_size (b), heads (h), sequence_length (s), dim_q (q)
+
+        # From the above dimensions it is clear that we are trying to multiply the matrices accross the d_model dimension and preserve all other dimensions.
+
+        Q = torch.einsum('bsd, hdq -> bhsq', q, self.weight_q)
+        K = torch.einsum('bsd, hdq -> bhsq', k, self.weight_k)
+        V = torch.einsum('bsd, hdq -> bhsq', v, self.weight_v)
+
+
