@@ -80,10 +80,10 @@ class MultiHeadAttentionBlock(nn.Module):
         self. dropout = nn.Dropout(dropout)
         assert d_model % heads == 0, "D_model should be divisible by the number of heads"
 
-        dim_q = self.d_model // self.heads
-        self.weight_q = nn.Parameter(torch.randn(size=(heads, d_model, dim_q),generator=torch.random.manual_seed(0)))
-        self.weight_k = nn.Parameter(torch.randn(size=(heads, d_model, dim_q),generator=torch.random.manual_seed(1)))
-        self.weight_v = nn.Parameter(torch.randn(size=(heads, d_model, dim_q),generator=torch.random.manual_seed(2)))
+        self.dim_q = self.d_model // self.heads
+        self.weight_q = nn.Parameter(torch.randn(size=(heads, d_model, self.dim_q),generator=torch.random.manual_seed(0)))
+        self.weight_k = nn.Parameter(torch.randn(size=(heads, d_model, self.dim_q),generator=torch.random.manual_seed(1)))
+        self.weight_v = nn.Parameter(torch.randn(size=(heads, d_model, self.dim_q),generator=torch.random.manual_seed(2)))
         self.weight_out = nn.Parameter(torch.randn(size=(d_model,d_model), generator=torch.random.manual_seed(3)))
 
     @staticmethod
@@ -122,11 +122,11 @@ class MultiHeadAttentionBlock(nn.Module):
         K = torch.einsum('bsd, hdq -> bhsq', k, self.weight_k)
         V = torch.einsum('bsd, hdq -> bhsq', v, self.weight_v)
 
-        x, self.attention_scores = MultiHeadAttentionBlock.attention(Q, K, V, mask, self.dropout)
+        output, self.attention_scores = MultiHeadAttentionBlock.attention(Q, K, V, mask, self.dropout)
 
+        output = output.permute(0,2,1,3).contiguous().view(output.shape[0], -1, self.heads * self.dim_q)
 
+        output = torch.einsum('bsd, od -> bso', output, self.weight_out)
 
-
-
-
+        return output
 
