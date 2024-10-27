@@ -124,9 +124,18 @@ class MultiHeadAttentionBlock(nn.Module):
 
         output, self.attention_scores = MultiHeadAttentionBlock.attention(Q, K, V, mask, self.dropout)
 
+        # Dimension of output after concatinating all the heads together:
+        # output: batch_size (b), sequence_length (s), d_model (d)
+        # d_model = heads * dim_q)
         output = output.permute(0,2,1,3).contiguous().view(output.shape[0], -1, self.heads * self.dim_q)
 
+        # Dimensions of output after multiplying with weight_out
+        # output: batch_size (b), sequence_length (s), d_model (d)
+        # weight_out: d_model (o), d_model (d)
+        # final_output: batch_size (b), sequence_length (s), d_model (0)
         output = torch.einsum('bsd, od -> bso', output, self.weight_out)
 
         return output
+
+
 
