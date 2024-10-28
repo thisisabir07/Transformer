@@ -265,3 +265,20 @@ class Transformer(nn.Module):
         projection_layer: ProjectionLayer,
     ):
         super().__init__()
+        self.encoder = (encoder,)
+        self.decoder = (decoder,)
+        self.source_embedding = (source_embedding,)
+        self.target_positional_embedding = (target_positional_embedding,)
+        self.source_positional_embedding = (source_positional_embedding,)
+        self.target_positional_embedding = (target_positional_embedding,)
+        self.projection_layer = projection_layer
+
+    def encode(self, source, source_mask):
+        source = self.source_embedding(source)
+        source = self.source_positional_embedding(source)
+        return self.encoder(source, source_mask)
+
+    def decode(self, encoder_output, source_mask, target, target_mask):
+        target = self.target_embedding(target)
+        target = self.target_positional_embedding(target)
+        return self.decoder(target, encoder_output, source_mask, target_mask)
