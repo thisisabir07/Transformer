@@ -263,14 +263,14 @@ class Transformer(nn.Module):
         source_positional_embedding: PositionalEncoding,
         target_positional_embedding: PositionalEncoding,
         projection_layer: ProjectionLayer,
-    ):
+    ) -> None:
         super().__init__()
-        self.encoder = (encoder,)
-        self.decoder = (decoder,)
-        self.source_embedding = (source_embedding,)
-        self.target_positional_embedding = (target_positional_embedding,)
-        self.source_positional_embedding = (source_positional_embedding,)
-        self.target_positional_embedding = (target_positional_embedding,)
+        self.encoder = encoder
+        self.decoder = decoder
+        self.target_embedding = target_embedding
+        self.source_embedding = source_embedding
+        self.target_positional_embedding = target_positional_embedding
+        self.source_positional_embedding = source_positional_embedding
         self.projection_layer = projection_layer
 
     def encode(self, source, source_mask):
@@ -282,3 +282,77 @@ class Transformer(nn.Module):
         target = self.target_embedding(target)
         target = self.target_positional_embedding(target)
         return self.decoder(target, encoder_output, source_mask, target_mask)
+
+    def project(self, x):
+        return self.projection_layer(x)
+
+
+def transformerBuilder(
+    source_vocabulary_size: int,
+    target_vocabulary_size: int,
+    source_sequence_length: int,
+    target_sequence_length: int,
+    d_model: int,
+    num_layers: int,
+    heads: int,
+    dropout: float,
+    d_ff: int,
+) -> Transformer:
+    source_embedding = InputEmbedding(d_model, source_vocabulary_size)
+    target_embedding = InputEmbedding(d_model, target_vocabulary_size)
+
+    # create positional encodings
+    source_positional_encoding = PositionalEncoding(
+        d_model, source_sequence_length, dropout
+    )
+    target_positional_encoding = PositionalEncoding(
+        d_model, target_sequence_length, dropout
+    )
+
+    # create encoder blocks
+    encoder_blocks = []
+    for _ in range(num_layers):
+        encoder_self_attention_block = MultiHeadAttentionBlock(d_model, heads, dropout)
+        feed_forward_block = FeedForwardBlock(d_model, d_ff, dropout)
+        encoder_block = EncoderBlock(
+            encoder_self_attention_block, feed_forward_block, dropout
+        )
+        encoder_blocks.append(encoder_block)
+
+    # create decoder blocks
+    decoder_blocks = []
+    for _ in range(num_layers):
+        decoder_self_attention_block = MultiHeadAttentionBlock(d_model, heads, dropout)
+        decoder_cross_attention_block = MultiHeadAttentionBlock(d_model, heads, dropout)
+        feed_forward_block = FeedForwardBlock(d_model, d_ff, dropout)
+        decoder_block = DecoderBlock(
+            decoder_self_attention_block,
+            decoder_cross_attention_block,
+            feed_forward_block,
+            dropout,
+        )
+        decoder_blocks.append(decoder_block)
+
+    # create Encoder and Decoder
+    encoder = Encoder(nn.ModuleList(encoder_blocks))
+    decoder = Decoder(nn.ModuleList(decoder_blocks))
+
+    # create the projection layyer
+    projection_layer = ProjectionLayer(d_model, target_vocabulary_size)
+
+    # create the transformer
+    transformer = Transformer(
+        encoder,
+        decoder,
+        source_embedding,
+        target_embedding,
+        source_positional_encoding,
+        target_positional_encoding,
+        projection_layer,
+    )
+    # Initialize parameters
+    for x in transformer.parameters():
+        if x.dim() > 1:
+            nn.init.xavier_uniform_(x)
+
+    return transformer
