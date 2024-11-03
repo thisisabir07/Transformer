@@ -11,7 +11,10 @@ from tokenizers.trainers import WordLevelTrainer
 from torch.utils.data import DataLoader
 from torch.utils.data import random_split
 
-from config import get_weights_file_path
+from torch.utils.tensorboard import SummaryWriter
+import warnings
+
+from tqdm import tqdm
 from dataset import LanguageDataset
 from model import transformerBuilder
 
@@ -173,3 +176,41 @@ def train_model(config):
             )  # (batch_size, sequence_length, target_vocabulary_size)
 
             label = batch["label"].to(device)  # (batch_size, sequence_length)
+
+            loss = loss_fn(
+                projection_output.view(-1, target_tokenizer.get_vocab_size()),
+                label.view(-1),
+            )
+            batch_iterator.set_post_fix({f"Loss": f"{loss.item():6.3f}"})
+
+            # Log the loss
+            writer.add_scalar("train_loss", loss.item(), global_step)
+            writer.flush()
+
+            # Backpropogate the loss:
+            loss.backward()
+
+            # Update the weights
+            optimizer.step()
+            optimizer.zero_grad()
+
+            global_step += 1
+
+        # save the model at the end of each epoch:
+
+    model_filename = get_weights_file_path(config, f"{epoch:02d}")
+    torch.save(
+        {
+            "epoch": epoch,
+            "model_state_dict": model.state_dict(),
+            "optimizer_state_dict": optimizer.state(),
+            "global_step": global_step,
+        },
+        model_filename,
+    )
+
+
+if __name__ == "__main__":
+    warnings.filterwarnings("ignore")
+    config = get_config()
+    train_model(config)
