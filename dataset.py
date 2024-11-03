@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from torch.utils.data import Dataset
+from typing import Any
 
 
 class LanguageDataset(Dataset):
@@ -92,8 +93,12 @@ class LanguageDataset(Dataset):
             .unsqueeze(0)
             .unsqueeze(0)
             .int(),  # dimesions: (1,1,sequence_length)
-            "decoder_mask": (decoder_input != self.pad_token).unsqueeze(
-                (0).unsqueeze(0).int() & causal_mask(decoder_input.size(0))
+            "decoder_mask": (decoder_input != self.pad_token)
+            .unsqueeze(0)
+            .unsqueeze(0)
+            .int()
+            & causal_mask(
+                decoder_input.size(0)
             ),  # dimensions: (1, sequence_length) & (1, sequence_length, sequence_length)
         }
 

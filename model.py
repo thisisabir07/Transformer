@@ -292,11 +292,11 @@ def transformerBuilder(
     target_vocabulary_size: int,
     source_sequence_length: int,
     target_sequence_length: int,
-    d_model: int,
-    num_layers: int,
-    heads: int,
-    dropout: float,
-    d_ff: int,
+    d_model: int = 512,
+    num_layers: int = 6,
+    heads: int = 8,
+    dropout: float = 0.1,
+    d_ff: int = 2048,
 ) -> Transformer:
     source_embedding = InputEmbedding(d_model, source_vocabulary_size)
     target_embedding = InputEmbedding(d_model, target_vocabulary_size)
