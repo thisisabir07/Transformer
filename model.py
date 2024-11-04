@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 import math
+import torch.nn.functional as F
+
 
 
 class InputEmbedding(nn.Module):
@@ -30,21 +32,22 @@ class PositionalEncoding(nn.Module):
             torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model)
         )
 
-        # apply sin to all even positons
+        # apply sin to all even positions
         pos_enc[:, 0::2] = torch.sin(position * denominator)
         pos_enc[:, 1::2] = torch.cos(position * denominator)
 
-        pos_enc.unsqueeze(
-            0
-        )  # the new dimension of pos_enc is (1, sequence_length, d_model)
+        # add a batch dimension: new shape is (1, sequence_length, d_model)
+        pos_enc = pos_enc.unsqueeze(0)
 
         # this saves the positional encoding tensor in memory
         self.register_buffer("pos_enc", pos_enc)
 
     def forward(self, x):
-        x = x + (self.pos_enc[:, : x.shape[1], :]).requires_grad_(False)
+        # pos_enc should match the shape (batch_size, sequence_length, d_model)
+        # Add requires_grad_(False) to prevent gradients from being calculated
+        x = x + self.pos_enc[:, : x.shape[1], :].requires_grad_(False)
         return self.dropout(x)
-
+    
 
 class LayerNormalization(nn.Module):
     def __init__(self, epsilon: float = 10 ** (-6)):
@@ -72,91 +75,64 @@ class FeedForwardBlock(nn.Module):
 
 
 class MultiHeadAttentionBlock(nn.Module):
-    def __init__(self, d_model: int, heads: int, dropout: float):
-        super().__init__()
-        self.d_model = d_model
-        self.heads = heads
+    def __init__(self, embedding_dim, num_heads, dropout=0.1):
+        super(MultiHeadAttentionBlock, self).__init__()
+        assert embedding_dim % num_heads == 0, "Embedding dimension must be divisible by number of heads"
+        
+        self.num_heads = num_heads
+        self.head_dim = embedding_dim // num_heads
+
+        # Linear layers for query, key, value
+        self.query_layer = nn.Linear(embedding_dim, embedding_dim)
+        self.key_layer = nn.Linear(embedding_dim, embedding_dim)
+        self.value_layer = nn.Linear(embedding_dim, embedding_dim)
+
+        # Output linear layer
+        self.out_layer = nn.Linear(embedding_dim, embedding_dim)
+        
+        # Dropout layer
         self.dropout = nn.Dropout(dropout)
-        assert (
-            d_model % heads == 0
-        ), "D_model should be divisible by the number of heads"
+    
+    def forward(self, query, key, value, mask=None):
+        batch_size = query.size(0)
+        
+        # Linear projections
+        query = self.query_layer(query)  # (batch_size, query_len, embedding_dim)
+        key = self.key_layer(key)        # (batch_size, key_len, embedding_dim)
+        value = self.value_layer(value)  # (batch_size, key_len, embedding_dim)
+        
+        # Split into heads
+        query = query.view(batch_size, -1, self.num_heads, self.head_dim).transpose(1, 2)
+        key = key.view(batch_size, -1, self.num_heads, self.head_dim).transpose(1, 2)
+        value = value.view(batch_size, -1, self.num_heads, self.head_dim).transpose(1, 2)
+        
+        # Attention scores
+        # query shape: (batch_size, num_heads, query_len, head_dim)
+        # key shape: (batch_size, num_heads, key_len, head_dim)
+        # einsum result shape: (batch_size, num_heads, query_len, key_len)
+        scores = torch.einsum("bhqd, bhkd -> bhqk", query, key) / (self.head_dim ** 0.5)
 
-        self.dim_q = self.d_model // self.heads
-        self.weight_q = nn.Parameter(
-            torch.randn(
-                size=(heads, d_model, self.dim_q), generator=torch.random.manual_seed(0)
-            )
-        )
-        self.weight_k = nn.Parameter(
-            torch.randn(
-                size=(heads, d_model, self.dim_q), generator=torch.random.manual_seed(1)
-            )
-        )
-        self.weight_v = nn.Parameter(
-            torch.randn(
-                size=(heads, d_model, self.dim_q), generator=torch.random.manual_seed(2)
-            )
-        )
-        self.weight_out = nn.Parameter(
-            torch.randn(size=(d_model, d_model), generator=torch.random.manual_seed(3))
-        )
-
-    @staticmethod
-    def attention(query, key, value, mask, dropout: nn.Dropout):
-        dim_k = query.shape[-1]
-
-        attention_scores = (
-            torch.einsum("bhsq, bhtq -> bhst", query, key)
-        ) / torch.sqrt(torch.tensor(dim_k, dtype=torch.float32))
-
+        # Apply mask (if any)
         if mask is not None:
-            attention_scores = attention_scores.masked_fill(mask == 0, -1e9)
-        attention_scores = attention_scores.softmax(
-            dim=-1
-        )  # dimention of attention_score is: batch_size (b), heads (h), sequence_length (s), sequence_length (s)
+            scores = scores.masked_fill(mask == 0, float("-inf"))
+        
+        # Softmax to get attention probabilities
+        attention_weights = F.softmax(scores, dim=-1)
+        attention_weights = self.dropout(attention_weights)
 
-        if dropout is not None:
-            attention_scores = dropout(attention_scores)
-
-        # Dimensions:
-        # attention_scores: batch_size (b), heads (h), sequence_length (s), sequence_length (s)
-        # value: batch_size (b), heads (h), sequence_length (s), dim_q (q)
-        # output: batch_size (b), heads (h), sequence_length (s), dim_q (q)
-
-        output = torch.einsum("bhss,bhsq->bhsq", attention_scores, value)
-        return output, attention_scores
-
-    def forward(self, q, k, v, mask):
-        # q, k, v = batch_size (b), sequence_length (s), d_model (d)
-        # weight_q, weight_k, weight_v = heads (h), dim_q (q), d_model (d)
-        # Q, K, V = batch_size (b), heads (h), sequence_length (s), dim_q (q)
-
-        # From the above dimensions it is clear that we are trying to multiply the matrices accross the d_model dimension and preserve all other dimensions.
-
-        Q = torch.einsum("bsd, hdq -> bhsq", q, self.weight_q)
-        K = torch.einsum("bsd, hdq -> bhsq", k, self.weight_k)
-        V = torch.einsum("bsd, hdq -> bhsq", v, self.weight_v)
-
-        output, self.attention_scores = MultiHeadAttentionBlock.attention(
-            Q, K, V, mask, self.dropout
-        )
-
-        # Dimension of output after concatinating all the heads together:
-        # output: batch_size (b), sequence_length (s), d_model (d)
-        # d_model = heads * dim_q)
-        output = (
-            output.permute(0, 2, 1, 3)
-            .contiguous()
-            .view(output.shape[0], -1, self.heads * self.dim_q)
-        )
-
-        # Dimensions of output after multiplying with weight_out
-        # output: batch_size (b), sequence_length (s), d_model (d)
-        # weight_out: d_model (o), d_model (d)
-        # final_output: batch_size (b), sequence_length (s), d_model (o)
-        output = torch.einsum("bsd, od -> bso", output, self.weight_out)
-        return output
-
+        # Compute attention output
+        # attention_weights shape: (batch_size, num_heads, query_len, key_len)
+        # value shape: (batch_size, num_heads, key_len, head_dim)
+        # einsum result shape: (batch_size, num_heads, query_len, head_dim)
+        attention_output = torch.einsum("bhqk, bhkd -> bhqd", attention_weights, value)
+        
+        # Concatenate heads
+        attention_output = attention_output.transpose(1, 2).contiguous().view(batch_size, -1, self.num_heads * self.head_dim)
+        
+        # Final linear layer
+        output = self.out_layer(attention_output)
+        
+        return output, attention_weights
 
 class ResidualConnection(nn.Module):
     def __init__(self, dropout: float) -> None:
@@ -165,7 +141,7 @@ class ResidualConnection(nn.Module):
         self.norm = LayerNormalization()
 
     def forward(self, x, sublayer):
-        return x + self.dropout(sublayer(self.norm(x)))
+        return x + self.dropout(sublayer(self.norm(x))[0])
 
 
 class EncoderBlock(nn.Module):
