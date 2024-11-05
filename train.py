@@ -137,7 +137,7 @@ def get_or_build_tokenizer(config, dataset, language):
 
 def get_dataset(config):
     raw_dataset = load_dataset(
-        "opus_books",
+        "Helsinki-NLP/opus-100",
         f'{config["source_language"]}-{config["target_language"]}',
         split="train",
     )
