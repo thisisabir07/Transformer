@@ -271,19 +271,19 @@ def train_model(config):
             optimizer.step()
             optimizer.zero_grad(set_to_none=True)
 
-            run_validation(
-                model,
-                validation_dataloader,
-                source_tokenizer,
-                target_tokenizer,
-                config["sequence_length"],
-                device,
-                lambda message: batch_iterator.write(message),
-                global_step,
-                writer,
-            )
-
             global_step += 1
+
+        run_validation(
+            model,
+            validation_dataloader,
+            source_tokenizer,
+            target_tokenizer,
+            config["sequence_length"],
+            device,
+            lambda message: batch_iterator.write(message),
+            global_step,
+            writer,
+        )
 
         model_filename = get_weights_file_path(config, f"{epoch:02d}")
         torch.save(
